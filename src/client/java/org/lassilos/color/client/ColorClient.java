@@ -36,6 +36,8 @@ public class ColorClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // Ensure configuration is loaded (creates config file if missing)
+        try { ColorConfig.load(); } catch (Throwable ignored) {}
         KEY_SHOW_SCREEN = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.color.show_current_screen",
                 InputUtil.Type.KEYSYM,

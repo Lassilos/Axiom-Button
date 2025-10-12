@@ -18,6 +18,9 @@
     ],
     "main": [
       "org.lassilos.color.Color"
+    ],
+    "modmenu": [
+      "org.lassilos.color.client.ModMenuIntegration"
     ]
   },
   "mixins": [

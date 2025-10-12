@@ -9,6 +9,7 @@ import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import org.lassilos.color.client.ColorButton;
 import org.lassilos.color.client.ColorClient;
+import org.lassilos.color.client.ColorConfig;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -54,15 +55,24 @@ public class CreativeInventoryScreenMixin {
     @Inject(method = "init", at = @At("TAIL"))
     private void onInit(CallbackInfo ci) {
         try {
-            // Do not add the button in singleplayer (integrated server present)
+            // Respect configuration for showing buttons in singleplayer/multiplayer
             MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc != null && mc.getServer() != null) {
-                // singleplayer: skip adding the button(s)
-                this.colorAxiomBtnAdded = false;
-                this.colorAxiomBtn = null;
-                this.colorGradientBtnAdded = false;
-                this.colorGradientBtn = null;
-                return;
+            boolean isSingleplayer = (mc != null && mc.getServer() != null);
+            if (mc != null) {
+                if (isSingleplayer && !ColorConfig.shouldShowInSingleplayer()) {
+                    this.colorAxiomBtnAdded = false;
+                    this.colorAxiomBtn = null;
+                    this.colorGradientBtnAdded = false;
+                    this.colorGradientBtn = null;
+                    return;
+                }
+                if (!isSingleplayer && !ColorConfig.shouldShowInMultiplayer()) {
+                    this.colorAxiomBtnAdded = false;
+                    this.colorAxiomBtn = null;
+                    this.colorGradientBtnAdded = false;
+                    this.colorGradientBtn = null;
+                    return;
+                }
             }
 
             CreativeInventoryScreen self = (CreativeInventoryScreen) (Object) this;
