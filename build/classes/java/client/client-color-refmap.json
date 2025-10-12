@@ -1,0 +1,30 @@
+{
+  "mappings": {
+    "org/lassilos/color/mixin/client/CreativeInventoryScreenMixin": {
+      "init": "Lnet/minecraft/class_481;method_25426()V",
+      "render": "Lnet/minecraft/class_481;method_25394(Lnet/minecraft/class_332;IIF)V"
+    },
+    "org/lassilos/color/mixin/client/ScreenAccessor": {
+      "addDrawableChild": "method_37063(Lnet/minecraft/class_364;)Lnet/minecraft/class_364;"
+    },
+    "org/lassilos/color/mixin/client/SurvivalInventoryMixin": {
+      "init": "Lnet/minecraft/class_490;method_25426()V",
+      "render": "Lnet/minecraft/class_490;method_25394(Lnet/minecraft/class_332;IIF)V"
+    }
+  },
+  "data": {
+    "named:intermediary": {
+      "org/lassilos/color/mixin/client/CreativeInventoryScreenMixin": {
+        "init": "Lnet/minecraft/class_481;method_25426()V",
+        "render": "Lnet/minecraft/class_481;method_25394(Lnet/minecraft/class_332;IIF)V"
+      },
+      "org/lassilos/color/mixin/client/ScreenAccessor": {
+        "addDrawableChild": "method_37063(Lnet/minecraft/class_364;)Lnet/minecraft/class_364;"
+      },
+      "org/lassilos/color/mixin/client/SurvivalInventoryMixin": {
+        "init": "Lnet/minecraft/class_490;method_25426()V",
+        "render": "Lnet/minecraft/class_490;method_25394(Lnet/minecraft/class_332;IIF)V"
+      }
+    }
+  }
+}
