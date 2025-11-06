@@ -18,11 +18,13 @@ public final class ColorConfig {
     private static final String KEY_SHOW_SINGLE = "show_in_singleplayer";
     private static final String KEY_SHOW_MULTI = "show_in_multiplayer";
     private static final String KEY_DEBUG_O_ENABLED = "enable_debug_key_o";
+    private static final String KEY_SCREEN_OPEN_NOTIFY = "enable_screen_open_notifications";
 
     private static boolean loaded = false;
     private static boolean showInSingleplayer = false; // default: false (preserve current behavior)
     private static boolean showInMultiplayer = true;  // default: true
     private static boolean debugKeyOEnabled = true;   // default: true (keep debug behaviour enabled)
+    private static boolean screenOpenNotificationsEnabled = true; // default: true (notify when Axiom screen opened)
 
     private ColorConfig() {}
 
@@ -42,6 +44,7 @@ public final class ColorConfig {
         showInSingleplayer = Boolean.parseBoolean(p.getProperty(KEY_SHOW_SINGLE, Boolean.toString(showInSingleplayer)));
         showInMultiplayer = Boolean.parseBoolean(p.getProperty(KEY_SHOW_MULTI, Boolean.toString(showInMultiplayer)));
         debugKeyOEnabled = Boolean.parseBoolean(p.getProperty(KEY_DEBUG_O_ENABLED, Boolean.toString(debugKeyOEnabled)));
+        screenOpenNotificationsEnabled = Boolean.parseBoolean(p.getProperty(KEY_SCREEN_OPEN_NOTIFY, Boolean.toString(screenOpenNotificationsEnabled)));
 
         // if config file was missing, write defaults
         if (!Files.exists(configFile)) {
@@ -64,8 +67,9 @@ public final class ColorConfig {
         p.setProperty(KEY_SHOW_SINGLE, Boolean.toString(showInSingleplayer));
         p.setProperty(KEY_SHOW_MULTI, Boolean.toString(showInMultiplayer));
         p.setProperty(KEY_DEBUG_O_ENABLED, Boolean.toString(debugKeyOEnabled));
+        p.setProperty(KEY_SCREEN_OPEN_NOTIFY, Boolean.toString(screenOpenNotificationsEnabled));
         try (OutputStream out = Files.newOutputStream(configFile)) {
-            p.store(out, "Color mod configuration: set show_in_singleplayer, show_in_multiplayer, enable_debug_key_o to true/false");
+            p.store(out, "Color mod configuration: set show_in_singleplayer, show_in_multiplayer, enable_debug_key_o, enable_screen_open_notifications to true/false");
         } catch (IOException e) {
             System.out.println("[color] Failed to write config file: " + e.getMessage());
         }
@@ -78,8 +82,10 @@ public final class ColorConfig {
     public static boolean shouldShowInSingleplayer() { ensureLoaded(); return showInSingleplayer; }
     public static boolean shouldShowInMultiplayer() { ensureLoaded(); return showInMultiplayer; }
     public static boolean isDebugKeyOEnabled() { ensureLoaded(); return debugKeyOEnabled; }
+    public static boolean isScreenOpenNotificationEnabled() { ensureLoaded(); return screenOpenNotificationsEnabled; }
 
     public static synchronized void setShowInSingleplayer(boolean v) { showInSingleplayer = v; save(); }
     public static synchronized void setShowInMultiplayer(boolean v) { showInMultiplayer = v; save(); }
     public static synchronized void setDebugKeyOEnabled(boolean v) { debugKeyOEnabled = v; save(); }
+    public static synchronized void setScreenOpenNotificationEnabled(boolean v) { screenOpenNotificationsEnabled = v; save(); }
 }

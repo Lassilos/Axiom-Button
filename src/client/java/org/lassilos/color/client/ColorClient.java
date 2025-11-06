@@ -45,6 +45,115 @@ public class ColorClient implements ClientModInitializer {
         // Debug 'O' key that prints the current screen; can be disabled via config
         KEY_DEBUG_O = createKeyBindingTolerant("key.color.debug_print_screen", GLFW.GLFW_KEY_O, "key.categories.color");
 
+        // Install GLFW callback for direct window key events (keeps previous callback chain)
+        try {
+            installKeyCallback();
+        } catch (Throwable ignored) {}
+
+        // Register client tick handler to poll key state (works across GUI contexts and if KeyBinding couldn't be created)
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            try {
+                // Install GLFW key callback once the window is available to reliably detect keys in GUIs
+                if (client.getWindow() != null) {
+                    long handle = client.getWindow().getHandle();
+                    if (handle != lastWindowHandle) {
+                        // create and store our callback to avoid GC
+                        ourKeyCallback = new GLFWKeyCallback() {
+                            @Override
+                            public void invoke(long window, int key, int scancode, int action, int mods) {
+                                // chain to previous callback if present
+                                try {
+                                    if (previousKeyCallback != null) previousKeyCallback.invoke(window, key, scancode, action, mods);
+                                } catch (Throwable ignored) {}
+                                // handle both PRESS and REPEAT so quick taps and held keys work
+                                if ((key == GLFW.GLFW_KEY_H) && (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_REPEAT)) {
+                                    MinecraftClient mc = MinecraftClient.getInstance();
+                                    if (mc != null) mc.execute(() -> {
+                                        try {
+                                            ColorClient inst = getInstance();
+                                            if (inst != null) inst.showCurrentScreen();
+                                        } catch (Throwable ignored) {}
+                                    });
+                                }
+                                // Debug 'O' key: print current screen if enabled in config
+                                if ((key == GLFW.GLFW_KEY_O) && (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_REPEAT)) {
+                                    MinecraftClient mc = MinecraftClient.getInstance();
+                                    if (mc != null) mc.execute(() -> {
+                                        try {
+                                            if (ColorConfig.isDebugKeyOEnabled()) {
+                                                ColorClient inst = getInstance();
+                                                if (inst != null) inst.showCurrentScreen();
+                                            }
+                                        } catch (Throwable ignored) {}
+                                    });
+                                }
+                            }
+                        };
+                        // install and keep previous
+                        previousKeyCallback = GLFW.glfwSetKeyCallback(handle, ourKeyCallback);
+                        lastWindowHandle = handle;
+                    }
+                }
+            }
+            catch (Throwable ignored) {
+            }
+
+            boolean keyDown;
+            try {
+                if (client.currentScreen != null && client.getWindow() != null) {
+                    long handle = client.getWindow().getHandle();
+                    keyDown = InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_H);
+                } else {
+                    keyDown = isShowKeyPressed();
+                }
+            } catch (Throwable t) {
+                keyDown = isShowKeyPressed();
+            }
+
+            // Debug 'O' key poll (works when window unavailable via registered keybinding too)
+            boolean debugKeyDown;
+            try {
+                if (client.currentScreen != null && client.getWindow() != null) {
+                    long handle = client.getWindow().getHandle();
+                    debugKeyDown = InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_O);
+                } else {
+                    debugKeyDown = isDebugKeyPressed();
+                }
+            } catch (Throwable t) {
+                debugKeyDown = isDebugKeyPressed();
+            }
+
+            if (keyDown && !showScreenKeyWasDown) {
+                // show current screen to user (overlay/chat)
+                showCurrentScreen();
+            }
+            showScreenKeyWasDown = keyDown;
+
+            if (debugKeyDown && !showDebugKeyWasDown) {
+                if (ColorConfig.isDebugKeyOEnabled()) {
+                    showCurrentScreen();
+                }
+            }
+            showDebugKeyWasDown = debugKeyDown;
+        });
+
+        // HUD overlay to show last messages when a screen is open (same as prior behavior)
+        HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (lastOverlayMessage != null && mc != null && mc.currentScreen != null) {
+                long now = System.currentTimeMillis();
+                if (now - lastOverlayTime < 3000) {
+                    drawContext.drawTextWithShadow(
+                        mc.textRenderer,
+                        "[color] " + lastOverlayMessage,
+                        10, 10, 0xFFFFFF
+                    );
+                } else {
+                    lastOverlayMessage = null;
+                }
+            }
+        });
+
     }
 
     // Helper: construct a KeyBinding in a tolerant way (try normal constructor, fall back to reflective discovery)
@@ -146,9 +255,8 @@ public class ColorClient implements ClientModInitializer {
                                     sendFeedback(mc, "CreativeColourScreen requires the vanilla Creative Inventory open — open it (press 'E' in creative) and press the key again.");
                                     continue;
                                 }
-                            } else {
-                                // If we can't find the vanilla creative class, fall back to the generic instantiate attempt below
                             }
+                            // If we can't find the vanilla creative class, fall back to the generic instantiate attempt below
                         } catch (Throwable ignored) {
                         }
                     }
@@ -178,7 +286,7 @@ public class ColorClient implements ClientModInitializer {
                         }
 
                         mc.setScreen((Screen) screenObj);
-                        sendFeedback(mc, "Opened Axiom screen: " + candidate);
+                        if (ColorConfig.isScreenOpenNotificationEnabled()) sendFeedback(mc, "Opened Axiom screen: " + candidate);
                         opened = true;
                         break;
                     } else {
@@ -240,9 +348,9 @@ public class ColorClient implements ClientModInitializer {
                                 // Otherwise, see if passing null is acceptable (some constructors accept null), try that
                                 try {
                                     ctor.setAccessible(true);
-                                    return ctor.newInstance(mc.player, (Object) null);
+                                    return ctor.newInstance(mc.player, null);
                                 } catch (Throwable ignored) {
-                                    // If that fails, we'll attempt to auto-create a vanilla CreativeInventoryScreen earlier in the caller
+                                     // If that fails, we'll attempt to auto-create a vanilla CreativeInventoryScreen earlier in the caller
                                 }
                                 // If we couldn't construct with current screen or null, inform user and abort
                                 sendFeedback(mc, "CreativeColourScreen requires the vanilla Creative Inventory open — open it (press 'E' in creative) and press the key again.");
@@ -262,7 +370,6 @@ public class ColorClient implements ClientModInitializer {
                     ctor.setAccessible(true);
                     Class<?>[] params = ctor.getParameterTypes();
                     Object[] args = new Object[params.length];
-                    boolean ok = true;
                     for (int i = 0; i < params.length; i++) {
                         Class<?> p = params[i];
                         // primitives
@@ -303,40 +410,90 @@ public class ColorClient implements ClientModInitializer {
             }
             sb.append(") ");
         }
-        sendFeedback(mc, "No suitable constructor found for " + cls.getName() + ". Available: " + sb.toString());
-        // Return null to indicate we couldn't instantiate the class instead of throwing; caller will handle feedback.
-        return null;
+        sendFeedback(mc, "No suitable constructor found for " + cls.getName() + ". Available: " + sb);
+         // Return null to indicate we couldn't instantiate the class instead of throwing; caller will handle feedback.
+         return null;
+     }
+
+    // Helper to provide default values for primitive parameter types when instantiating via reflection
+    private Object defaultFor(Class<?> primitive, MinecraftClient mc) {
+        if (primitive == boolean.class) return false;
+        if (primitive == byte.class) return (byte)0;
+        if (primitive == short.class) return (short)0;
+        if (primitive == int.class) return 0;
+        if (primitive == long.class) return 0L;
+        if (primitive == float.class) return 0f;
+        if (primitive == double.class) return 0d;
+        if (primitive == char.class) return '\0';
+        // Fallback - should not happen for primitives
+        return 0;
     }
 
-    private Object defaultFor(Class<?> t, MinecraftClient mc) {
-        if (!t.isPrimitive()) {
-            // common helpful substitutions
-            if (t.isAssignableFrom(Screen.class)) return mc.currentScreen;
-            if (t.isAssignableFrom(MinecraftClient.class)) return mc;
-            return null;
-        }
-        // primitives
-        if (t == int.class) return 0;
-        if (t == long.class) return 0L;
-        if (t == short.class) return (short) 0;
-        if (t == byte.class) return (byte) 0;
-        if (t == float.class) return 0f;
-        if (t == double.class) return 0d;
-        if (t == boolean.class) return false;
-        if (t == char.class) return '\0';
-        return 0; // fallback
+    // Helper to check the fallback keybinding state for the 'show screen' key
+    private boolean isShowKeyPressed() {
+        try {
+            if (KEY_SHOW_SCREEN != null) {
+                // Prefer isPressed() which reflects current held state; fall back to wasPressed() if available
+                try {
+                    return KEY_SHOW_SCREEN.isPressed();
+                } catch (Throwable ignored) {
+                    try {
+                        return KEY_SHOW_SCREEN.wasPressed();
+                    } catch (Throwable ignored2) {
+                        return false;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
+    // Helper to check the fallback keybinding state for the debug 'O' key
+    private boolean isDebugKeyPressed() {
+        try {
+            if (KEY_DEBUG_O != null) {
+                try {
+                    return KEY_DEBUG_O.isPressed();
+                } catch (Throwable ignored) {
+                    try {
+                        return KEY_DEBUG_O.wasPressed();
+                    } catch (Throwable ignored2) {
+                        return false;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    // Show (chat + overlay) a description of the current screen to the user
     private void showCurrentScreen() {
         MinecraftClient mc = MinecraftClient.getInstance();
-        Screen screen = mc.currentScreen;
-        String msg;
-        if (screen == null) {
-            msg = "No screen is currently open.";
-        } else {
-            msg = "Current screen: " + screen.getClass().getName();
+        if (mc == null) return;
+        try {
+            Screen s = mc.currentScreen;
+            if (s == null) {
+                sendFeedback(mc, "Current screen: <none>");
+                return;
+            }
+            String name = s.getClass().getName();
+            // If the screen has a title, include that (best-effort reflection)
+            String extra = "";
+            try {
+                // Many Screens expose a title field or method; try common approaches
+                try {
+                    java.lang.reflect.Field titleField = s.getClass().getDeclaredField("title");
+                    titleField.setAccessible(true);
+                    Object t = titleField.get(s);
+                    if (t != null) extra = " - title=" + t.toString();
+                } catch (NoSuchFieldException nsf) {
+                    // ignore
+                }
+            } catch (Throwable ignored) {}
+            sendFeedback(mc, "Current screen: " + name + extra);
+        } catch (Throwable t) {
+            sendFeedback(mc, "Exception while retrieving current screen: " + t.getClass().getSimpleName() + " - " + t.getMessage());
         }
-        sendFeedback(mc, msg);
     }
 
     // Helper to get singleton instance
@@ -402,7 +559,7 @@ public class ColorClient implements ClientModInitializer {
                 }
                 if (screenObj instanceof net.minecraft.client.gui.screen.Screen) {
                     mc.setScreen((net.minecraft.client.gui.screen.Screen) screenObj);
-                    sendFeedback(mc, "Opened Axiom screen: " + candidate);
+                    if (ColorConfig.isScreenOpenNotificationEnabled()) sendFeedback(mc, "Opened Axiom screen: " + candidate);
                     opened = true;
                 } else {
                     if (screenObj == null) sendFeedback(mc, "Reflection failed to construct a " + candidate + " (result was null).");
@@ -464,43 +621,4 @@ public class ColorClient implements ClientModInitializer {
             }
         });
     }
-
-    // New: poll key states each client tick (safer for keybinding availability)
-    ClientTickEvents.END_CLIENT_TICK.register(client -> {
-        if (client.world == null) return; // skip if not in a world (e.g., title screen)
-
-        boolean keyDown;
-        try {
-            if (client.currentScreen != null && client.getWindow() != null) {
-                long handle = client.getWindow().getHandle();
-                keyDown = InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_H);
-            } else {
-                keyDown = isShowKeyPressed();
-            }
-        } catch (Throwable t) {
-            keyDown = isShowKeyPressed();
-        }
-        // Debug 'O' key poll (works when window unavailable via registered keybinding too)
-        boolean debugKeyDown;
-        try {
-            if (client.currentScreen != null && client.getWindow() != null) {
-                long handle = client.getWindow().getHandle();
-                debugKeyDown = InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_O);
-            } else {
-                debugKeyDown = isDebugKeyPressed();
-            }
-        } catch (Throwable t) {
-            debugKeyDown = isDebugKeyPressed();
-        }
-        if (keyDown && !showScreenKeyWasDown) {
-            // show current screen to user (overlay/chat)
-             showCurrentScreen();
-          }
-          showScreenKeyWasDown = keyDown;
-        if (debugKeyDown && !showDebugKeyWasDown) {
-            if (ColorConfig.isDebugKeyOEnabled()) {
-                showCurrentScreen();
-            }
-        }
-        showDebugKeyWasDown = debugKeyDown;
-      });
+}
