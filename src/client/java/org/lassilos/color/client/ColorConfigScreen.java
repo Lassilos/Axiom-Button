@@ -8,7 +8,6 @@ public class ColorConfigScreen extends Screen {
     private final Screen parent;
     private boolean showSingle;
     private boolean showMulti;
-    private boolean debugO;
     private boolean notifyScreenOpen;
 
     public ColorConfigScreen(Screen parent) {
@@ -16,7 +15,6 @@ public class ColorConfigScreen extends Screen {
         this.parent = parent;
         this.showSingle = ColorConfig.shouldShowInSingleplayer();
         this.showMulti = ColorConfig.shouldShowInMultiplayer();
-        this.debugO = ColorConfig.isDebugKeyOEnabled();
         this.notifyScreenOpen = ColorConfig.isScreenOpenNotificationEnabled();
     }
 
@@ -40,21 +38,14 @@ public class ColorConfigScreen extends Screen {
             button.setMessage(Text.literal("Show in Multiplayer: " + showMulti));
         });
 
-        ColorButton debugBtn = new ColorButton(centerX - 100, centerY + 10, 200, 20,
-                Text.literal("Enable debug 'O' key: " + debugO), (button) -> {
-            debugO = !debugO;
-            ColorConfig.setDebugKeyOEnabled(debugO);
-            button.setMessage(Text.literal("Enable debug 'O' key: " + debugO));
-        });
-
-        ColorButton notifyBtn = new ColorButton(centerX - 100, centerY + 40, 200, 20,
+        ColorButton notifyBtn = new ColorButton(centerX - 100, centerY + 10, 200, 20,
                 Text.literal("Notify when screen opened: " + notifyScreenOpen), (button) -> {
             notifyScreenOpen = !notifyScreenOpen;
             ColorConfig.setScreenOpenNotificationEnabled(notifyScreenOpen);
             button.setMessage(Text.literal("Notify when screen opened: " + notifyScreenOpen));
         });
 
-        ColorButton done = new ColorButton(centerX - 100, centerY + 80, 200, 20,
+        ColorButton done = new ColorButton(centerX - 100, centerY + 40, 200, 20,
                 Text.literal("Done"), (button) -> {
             // return to parent screen
             if (this.client != null) this.client.setScreen(parent);
@@ -62,7 +53,6 @@ public class ColorConfigScreen extends Screen {
 
         this.addDrawableChild(singleBtn);
         this.addDrawableChild(multiBtn);
-        this.addDrawableChild(debugBtn);
         this.addDrawableChild(notifyBtn);
         this.addDrawableChild(done);
     }

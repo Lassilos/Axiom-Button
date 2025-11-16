@@ -1,23 +1,15 @@
 package org.lassilos.color.client;
 
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.glfw.GLFWKeyCallback;
 
 import java.lang.reflect.Constructor;
 
 public class ColorClient implements ClientModInitializer {
 
-    private static KeyBinding KEY_SHOW_SCREEN;
-    private static KeyBinding KEY_DEBUG_O;
     // Try multiple plausible Axiom class names (UK/US spellings and picker variants)
     private static final String[] AXIOM_SCREEN_CANDIDATES = new String[] {
             "com.moulberry.axiom.screen.CreativeColourScreen",
@@ -30,114 +22,17 @@ public class ColorClient implements ClientModInitializer {
 
     private String lastOverlayMessage = null;
     private long lastOverlayTime = 0;
-    private boolean showScreenKeyWasDown = false;
-    private boolean showDebugKeyWasDown = false;
-    private GLFWKeyCallback previousKeyCallback = null;
-    private GLFWKeyCallback ourKeyCallback = null;
-    private long lastWindowHandle = 0;
 
     @Override
     public void onInitializeClient() {
         // Ensure configuration is loaded (creates config file if missing)
         try { ColorConfig.load(); } catch (Throwable ignored) {}
-        // Create a KeyBinding in a way that tolerates signature changes across Minecraft versions.
-        KEY_SHOW_SCREEN = createKeyBindingTolerant("key.color.show_current_screen", GLFW.GLFW_KEY_H, "key.categories.color");
-        // Debug 'O' key that prints the current screen; can be disabled via config
-        KEY_DEBUG_O = createKeyBindingTolerant("key.color.debug_print_screen", GLFW.GLFW_KEY_O, "key.categories.color");
 
-        // Install GLFW callback for direct window key events (keeps previous callback chain)
-        try {
-            installKeyCallback();
-        } catch (Throwable ignored) {}
+        // NOTE: All hotkeys / keybindings have been removed intentionally.
+        // Previous behavior registered GLFW callbacks and polled key state to open screens.
+        // That logic was removed so the mod no longer responds to keyboard shortcuts.
 
-        // Register client tick handler to poll key state (works across GUI contexts and if KeyBinding couldn't be created)
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            try {
-                // Install GLFW key callback once the window is available to reliably detect keys in GUIs
-                if (client.getWindow() != null) {
-                    long handle = client.getWindow().getHandle();
-                    if (handle != lastWindowHandle) {
-                        // create and store our callback to avoid GC
-                        ourKeyCallback = new GLFWKeyCallback() {
-                            @Override
-                            public void invoke(long window, int key, int scancode, int action, int mods) {
-                                // chain to previous callback if present
-                                try {
-                                    if (previousKeyCallback != null) previousKeyCallback.invoke(window, key, scancode, action, mods);
-                                } catch (Throwable ignored) {}
-                                // handle both PRESS and REPEAT so quick taps and held keys work
-                                if ((key == GLFW.GLFW_KEY_H) && (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_REPEAT)) {
-                                    MinecraftClient mc = MinecraftClient.getInstance();
-                                    if (mc != null) mc.execute(() -> {
-                                        try {
-                                            ColorClient inst = getInstance();
-                                            if (inst != null) inst.showCurrentScreen();
-                                        } catch (Throwable ignored) {}
-                                    });
-                                }
-                                // Debug 'O' key: print current screen if enabled in config
-                                if ((key == GLFW.GLFW_KEY_O) && (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_REPEAT)) {
-                                    MinecraftClient mc = MinecraftClient.getInstance();
-                                    if (mc != null) mc.execute(() -> {
-                                        try {
-                                            if (ColorConfig.isDebugKeyOEnabled()) {
-                                                ColorClient inst = getInstance();
-                                                if (inst != null) inst.showCurrentScreen();
-                                            }
-                                        } catch (Throwable ignored) {}
-                                    });
-                                }
-                            }
-                        };
-                        // install and keep previous
-                        previousKeyCallback = GLFW.glfwSetKeyCallback(handle, ourKeyCallback);
-                        lastWindowHandle = handle;
-                    }
-                }
-            }
-            catch (Throwable ignored) {
-            }
-
-            boolean keyDown;
-            try {
-                if (client.currentScreen != null && client.getWindow() != null) {
-                    long handle = client.getWindow().getHandle();
-                    keyDown = InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_H);
-                } else {
-                    keyDown = isShowKeyPressed();
-                }
-            } catch (Throwable t) {
-                keyDown = isShowKeyPressed();
-            }
-
-            // Debug 'O' key poll (works when window unavailable via registered keybinding too)
-            boolean debugKeyDown;
-            try {
-                if (client.currentScreen != null && client.getWindow() != null) {
-                    long handle = client.getWindow().getHandle();
-                    debugKeyDown = InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_O);
-                } else {
-                    debugKeyDown = isDebugKeyPressed();
-                }
-            } catch (Throwable t) {
-                debugKeyDown = isDebugKeyPressed();
-            }
-
-            if (keyDown && !showScreenKeyWasDown) {
-                // show current screen to user (overlay/chat)
-                showCurrentScreen();
-            }
-            showScreenKeyWasDown = keyDown;
-
-            if (debugKeyDown && !showDebugKeyWasDown) {
-                if (ColorConfig.isDebugKeyOEnabled()) {
-                    showCurrentScreen();
-                }
-            }
-            showDebugKeyWasDown = debugKeyDown;
-        });
-
-        // HUD overlay to show last messages when a screen is open (same as prior behavior)
+        // HUD overlay to show last messages when a screen is open
         HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (lastOverlayMessage != null && mc != null && mc.currentScreen != null) {
@@ -154,81 +49,6 @@ public class ColorClient implements ClientModInitializer {
             }
         });
 
-    }
-
-    // Helper: construct a KeyBinding in a tolerant way (try normal constructor, fall back to reflective discovery)
-    private static KeyBinding createKeyBindingTolerant(String id, int keyCode, String category) {
-        // First, try the normal explicit constructor (may throw NoSuchMethodError on some runtime mappings)
-        try {
-            return KeyBindingHelper.registerKeyBinding(new KeyBinding(id, InputUtil.Type.KEYSYM, keyCode, category));
-        } catch (NoSuchMethodError | Exception e) {
-            // Fallback: try to reflectively find a compatible constructor and instantiate it
-        }
-
-        try {
-            Class<?> kbClass = KeyBinding.class;
-            for (Constructor<?> ctor : kbClass.getDeclaredConstructors()) {
-                Class<?>[] params = ctor.getParameterTypes();
-                if (params.length != 4) continue;
-
-                Object[] args = new Object[4];
-                // first param -> id
-                args[0] = id;
-                // find int param index
-                int intIdx = -1;
-                for (int i = 0; i < 4; i++) if (params[i].isPrimitive() && params[i] == int.class) { intIdx = i; break; }
-                if (intIdx == -1) continue;
-                args[intIdx] = keyCode;
-
-                // fill remaining params
-                for (int i = 0; i < 4; i++) {
-                    if (i == 0 || i == intIdx) continue;
-                    if (params[i].isAssignableFrom(String.class)) {
-                        args[i] = category;
-                        continue;
-                    }
-                    // If it's an enum (likely InputUtil.Type), try to find a KEYSYM constant or fallback to first
-                    if (params[i].isEnum()) {
-                        Object[] consts = params[i].getEnumConstants();
-                        Object pick = null;
-                        for (Object c : consts) {
-                            if (c.toString().equals("KEYSYM") || c.toString().equals("KEYSYM")) { pick = c; break; }
-                        }
-                        if (pick == null && consts.length > 0) pick = consts[0];
-                        args[i] = pick;
-                        continue;
-                    }
-                    // Last resort: try null (some constructors accept null)
-                    args[i] = null;
-                }
-
-                try {
-                    ctor.setAccessible(true);
-                    Object inst = ctor.newInstance(args);
-                    if (inst instanceof KeyBinding) {
-                        return KeyBindingHelper.registerKeyBinding((KeyBinding) inst);
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-        } catch (Throwable ignored) {}
-
-        // If all else fails, return a dummy registered keybinding by constructing a simple one via the minimal available API.
-        try {
-            // As a last fallback, register a keybinding via KeyBindingHelper with reflection creating a proxy-like object.
-            // Attempt to create using the constructor (String, int) if it exists.
-            Class<?> kbClass = KeyBinding.class;
-            for (Constructor<?> ctor : kbClass.getDeclaredConstructors()) {
-                Class<?>[] params = ctor.getParameterTypes();
-                if (params.length == 2 && params[0] == String.class && params[1] == int.class) {
-                    Object inst = ctor.newInstance(id, keyCode);
-                    if (inst instanceof KeyBinding) return KeyBindingHelper.registerKeyBinding((KeyBinding) inst);
-                }
-            }
-        } catch (Throwable ignored) {}
-
-        // Unable to construct a KeyBinding safely; return null (GLFW callback still provides functionality).
-        return null;
     }
 
     private void openAxiomScreen() {
@@ -429,43 +249,6 @@ public class ColorClient implements ClientModInitializer {
         return 0;
     }
 
-    // Helper to check the fallback keybinding state for the 'show screen' key
-    private boolean isShowKeyPressed() {
-        try {
-            if (KEY_SHOW_SCREEN != null) {
-                // Prefer isPressed() which reflects current held state; fall back to wasPressed() if available
-                try {
-                    return KEY_SHOW_SCREEN.isPressed();
-                } catch (Throwable ignored) {
-                    try {
-                        return KEY_SHOW_SCREEN.wasPressed();
-                    } catch (Throwable ignored2) {
-                        return false;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-        return false;
-    }
-
-    // Helper to check the fallback keybinding state for the debug 'O' key
-    private boolean isDebugKeyPressed() {
-        try {
-            if (KEY_DEBUG_O != null) {
-                try {
-                    return KEY_DEBUG_O.isPressed();
-                } catch (Throwable ignored) {
-                    try {
-                        return KEY_DEBUG_O.wasPressed();
-                    } catch (Throwable ignored2) {
-                        return false;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-        return false;
-    }
-
     // Show (chat + overlay) a description of the current screen to the user
     private void showCurrentScreen() {
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -579,46 +362,4 @@ public class ColorClient implements ClientModInitializer {
     // Single getInstance definition
     private static ColorClient getInstance() { return instance; }
 
-    // New: GLFW key callback for ColorClient (install early in onInitializeClient)
-    private void installKeyCallback() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) return;
-        lastWindowHandle = client.getWindow().getHandle();
-        previousKeyCallback = GLFW.glfwSetKeyCallback(lastWindowHandle, new GLFWKeyCallback() {
-            @Override
-            public void invoke(long window, int key, int scancode, int action, int mods) {
-                // Ignore if not for this window
-                if (window != lastWindowHandle) return;
-
-                // Debug: print key events
-                // System.out.println("Key: " + key + " Scancode: " + scancode + " Action: " + action + " Mods: " + mods);
-
-                // Handle key actions
-                if (action == GLFW.GLFW_PRESS || action == GLFW.GLFW_REPEAT) {
-                    // Show current screen (overlay/chat)
-                    if (key == GLFW.GLFW_KEY_H) {
-                        MinecraftClient mc = MinecraftClient.getInstance();
-                        if (mc != null) mc.execute(() -> {
-                            try {
-                                ColorClient inst = getInstance();
-                                if (inst != null) inst.showCurrentScreen();
-                            } catch (Throwable ignored) {}
-                        });
-                    }
-                    // Debug 'O' key: print current screen if enabled in config
-                    if (key == GLFW.GLFW_KEY_O) {
-                        MinecraftClient mc = MinecraftClient.getInstance();
-                        if (mc != null) mc.execute(() -> {
-                            try {
-                                if (ColorConfig.isDebugKeyOEnabled()) {
-                                    ColorClient inst = getInstance();
-                                    if (inst != null) inst.showCurrentScreen();
-                                }
-                            } catch (Throwable ignored) {}
-                        });
-                    }
-                }
-            }
-        });
-    }
 }
